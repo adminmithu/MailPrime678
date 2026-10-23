@@ -3,7 +3,9 @@ import logging
 import os
 import re
 import sys
+import threading
 from datetime import datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 # Enable UTF-8 for console output on Windows
 if sys.platform == "win32":
@@ -876,6 +878,34 @@ async def background_inbox_poller(app: Application):
             await asyncio.sleep(POLL_INTERVAL)
 
 # ────────────────────────────────────────────────────────────────
+# Lightweight Health Check Server (For Render Web Service Port Binding)
+# ────────────────────────────────────────────────────────────────
+
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"MailFuetch Bot is running live!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, format, *args):
+        # Suppress HTTP log noise in Render console
+        pass
+
+def start_health_server():
+    port = int(os.environ.get("PORT", 10000))
+    try:
+        server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+        logger.info(f"Health server successfully listening on port {port}")
+        server.serve_forever()
+    except Exception as e:
+        logger.error(f"Health server error on port {port}: {e}")
+
+# ────────────────────────────────────────────────────────────────
 # Application Startup and Main
 # ────────────────────────────────────────────────────────────────
 
@@ -892,6 +922,9 @@ def main():
         print("Example: BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz")
         print("=" * 60 + "\n")
         return
+
+    # Start health check server in background thread for Render Web Service
+    threading.Thread(target=start_health_server, daemon=True).start()
 
     # Build Telegram application
     app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
