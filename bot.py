@@ -905,6 +905,21 @@ def start_health_server():
     except Exception as e:
         logger.error(f"Health server error on port {port}: {e}")
 
+async def keep_alive_pinger():
+    """Pings external Render URL every 10 minutes to prevent free-tier spin down"""
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not render_url:
+        return
+    logger.info(f"Keep-alive pinger active for: {render_url}")
+    async with httpx.AsyncClient() as client:
+        while True:
+            await asyncio.sleep(600)  # Ping every 10 mins (Render sleeps after 15 mins)
+            try:
+                r = await client.get(render_url, timeout=10.0)
+                logger.info(f"Keep-alive ping status: {r.status_code}")
+            except Exception as e:
+                logger.debug(f"Keep-alive ping error: {e}")
+
 # ────────────────────────────────────────────────────────────────
 # Application Startup and Main
 # ────────────────────────────────────────────────────────────────
@@ -913,6 +928,7 @@ async def post_init(application: Application):
     """Initializes database and spawns background polling worker"""
     await init_db()
     asyncio.create_task(background_inbox_poller(application))
+    asyncio.create_task(keep_alive_pinger())
 
 def main():
     if not BOT_TOKEN:
