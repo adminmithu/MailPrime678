@@ -385,9 +385,9 @@ async def refresh_inbox_handler(update: Update, context: ContextTypes.DEFAULT_TY
         date_str = m.get("received_at", "")
         item_code = extract_otp_code(subject)
 
-        row = [InlineKeyboardButton(f"📖 {subject[:20]}", callback_data=f"read_mail:{mid}", style="primary")]
+        row = [InlineKeyboardButton(f"📖 {subject[:18]}", callback_data=f"read_mail:{mid}", style="primary")]
         if item_code:
-            row.append(InlineKeyboardButton(f"📋 Copy: {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
+            row.append(InlineKeyboardButton(f"📋 {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
         buttons.append(row)
 
         text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n"
@@ -454,9 +454,9 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
         date_str = m.get("received_at", "")
         item_code = extract_otp_code(subject)
 
-        row = [InlineKeyboardButton(f"📖 {subject[:20]}", callback_data=f"read_mail:{mid}", style="primary")]
+        row = [InlineKeyboardButton(f"📖 {subject[:18]}", callback_data=f"read_mail:{mid}", style="primary")]
         if item_code:
-            row.append(InlineKeyboardButton(f"📋 Copy: {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
+            row.append(InlineKeyboardButton(f"📋 {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
         buttons.append(row)
 
         text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n"
@@ -525,10 +525,10 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     username = active_email.split("@")[0]
     web_url = make_web_url(username)
 
-    row_buttons = [InlineKeyboardButton("⬅️ ইনবক্সে ফেরত যান", callback_data="check_active_inbox")]
+    row_buttons = [InlineKeyboardButton("⬅️ ইনবক্স", callback_data="check_active_inbox", style="primary")]
     if otp:
         row_buttons.append(
-            InlineKeyboardButton(f"📋 Copy OTP: {otp}", copy_text=CopyTextButton(text=otp), style="success")
+            InlineKeyboardButton(f"📋 {otp}", copy_text=CopyTextButton(text=otp), style="success")
         )
 
     keyboard = InlineKeyboardMarkup([
@@ -835,7 +835,7 @@ async def background_inbox_poller(app: Application):
 
                             action_row = [
                                 InlineKeyboardButton(
-                                    "📖 সম্পূর্ণ মেইল পড়ুন",
+                                    "📖 বিস্তারিত",
                                     callback_data=f"read_mail:{mid}",
                                     style="primary",
                                 )
@@ -843,7 +843,7 @@ async def background_inbox_poller(app: Application):
                             if otp:
                                 action_row.append(
                                     InlineKeyboardButton(
-                                        f"📋 Copy OTP: {otp}",
+                                        f"📋 {otp}",
                                         copy_text=CopyTextButton(text=otp),
                                         style="success",
                                     )
