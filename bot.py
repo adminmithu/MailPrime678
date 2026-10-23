@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import os
 import re
@@ -44,6 +45,7 @@ from database import (
     clear_all_saved_emails,
     delete_saved_email,
     get_active_users_to_poll,
+    get_email_by_message_id,
     get_or_create_user,
     get_saved_email_by_id,
     get_saved_emails,
@@ -299,9 +301,9 @@ async def switch_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     if mails:
         inbox_preview = f"\n\n📬 <b>ইনবক্সে {len(mails)} টি মেইল রয়েছে:</b>\n"
         for i, m in enumerate(mails[:3], 1):
-            sender = m.get("sender_name") or m.get("sender_email") or "Unknown"
-            subject = m.get("subject") or "(No Subject)"
-            inbox_preview += f"{i}. <b>{subject}</b> — <i>{sender}</i>\n"
+            s_name = html.escape(m.get("sender_name") or m.get("sender_email") or "Unknown")
+            s_subj = html.escape(m.get("subject") or "(No Subject)")
+            inbox_preview += f"{i}. <b>{s_subj}</b> — <i>{s_name}</i>\n"
     else:
         inbox_preview = "\n\n📭 <i>ইনবক্স বর্তমানে খালি। নতুন মেইল আসলে অটোমেটিক নোটিফিকেশন পাবেন।</i>"
 
@@ -392,9 +394,12 @@ async def refresh_inbox_handler(update: Update, context: ContextTypes.DEFAULT_TY
             row.append(InlineKeyboardButton(f"📋 {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
         buttons.append(row)
 
-        text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n"
+        s_name = html.escape(m.get("sender_name") or m.get("sender_email") or "Unknown")
+        s_subj = html.escape(m.get("subject") or "(No Subject)")
+        s_date = html.escape(m.get("received_at", ""))
+        text += f"🔹 <b>{s_subj}</b>\n👤 প্রেরক: <code>{s_name}</code>\n⏰ সময়: {s_date}\n"
         if item_code:
-            text += f"🔑 <b>কোড:</b> <code>{item_code}</code>\n"
+            text += f"🔑 <b>কোড:</b> <code>{html.escape(item_code)}</code>\n"
         text += "\n"
 
     buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox", style="success")])
@@ -461,9 +466,12 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
             row.append(InlineKeyboardButton(f"📋 {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
         buttons.append(row)
 
-        text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n"
+        s_name = html.escape(m.get("sender_name") or m.get("sender_email") or "Unknown")
+        s_subj = html.escape(m.get("subject") or "(No Subject)")
+        s_date = html.escape(m.get("received_at", ""))
+        text += f"🔹 <b>{s_subj}</b>\n👤 প্রেরক: <code>{s_name}</code>\n⏰ সময়: {s_date}\n"
         if item_code:
-            text += f"🔑 <b>কোড:</b> <code>{item_code}</code>\n"
+            text += f"🔑 <b>কোড:</b> <code>{html.escape(item_code)}</code>\n"
         text += "\n"
 
     buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox", style="success")])
@@ -485,13 +493,14 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = update.effective_user.id
     db_user = await get_or_create_user(user_id)
     active_email = db_user.get("active_email")
+    target_email = await get_email_by_message_id(mail_id) or active_email
 
-    if not active_email:
+    if not target_email:
         await query.answer("কোনো অ্যাক্টিভ মেইল নেই!", show_alert=True)
         return
 
     async with httpx.AsyncClient() as client:
-        mail_data = await get_single_mail(client, active_email, mail_id)
+        mail_data = await get_single_mail(client, target_email, mail_id)
 
     if not mail_data:
         await query.answer("মেইলের বিস্তারিত লোড করা সম্ভব হয়নি।", show_alert=True)
@@ -506,7 +515,7 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     otp_section = ""
     if otp:
-        otp_section = f"\n━━━━━━━━━━━━━━━━━━━━━\n🔑 <b>OTP / Code:</b> <code>{otp}</code>\n"
+        otp_section = f"\n━━━━━━━━━━━━━━━━━━━━━\n🔑 <b>OTP / Code:</b> <code>{html.escape(str(otp))}</code>\n"
 
     # Truncate preview if too long
     body_preview = raw_body[:1000] if raw_body else "(No text content)"
@@ -514,17 +523,17 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     text = (
         f"✉️ <b>ইমেইল বিবরণ:</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📝 <b>Subject:</b> <b>{subject}</b>\n"
-        f"👤 <b>From:</b> <code>{sender}</code>\n"
-        f"⏰ <b>Date:</b> {date_str}"
+        f"📝 <b>Subject:</b> <b>{html.escape(subject)}</b>\n"
+        f"👤 <b>From:</b> <code>{html.escape(sender)}</code>\n"
+        f"⏰ <b>Date:</b> {html.escape(date_str)}"
         f"{otp_section}"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"📄 <b>Message Content:</b>\n\n"
-        f"{body_preview}\n"
+        f"{html.escape(body_preview)}\n"
         f"━━━━━━━━━━━━━━━━━━━━━"
     )
 
-    username = active_email.split("@")[0]
+    username = target_email.split("@")[0]
     web_url = make_web_url(username)
 
     row_buttons = [InlineKeyboardButton("⬅️ ইনবক্স", callback_data="check_active_inbox", style="primary")]
@@ -538,12 +547,34 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         [InlineKeyboardButton("🌐 ওয়েবে ফুল দেখুন", url=web_url)],
     ])
 
-    await query.edit_message_text(
-        text,
-        reply_markup=keyboard,
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=True,
-    )
+    try:
+        await query.edit_message_text(
+            text,
+            reply_markup=keyboard,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    except Exception:
+        plain_text = (
+            f"✉️ ইমেইল বিবরণ:\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📝 Subject: {subject}\n"
+            f"👤 From: {sender}\n"
+            f"⏰ Date: {date_str}\n"
+        )
+        if otp:
+            plain_text += f"━━━━━━━━━━━━━━━━━━━━━\n🔑 OTP / Code: {otp}\n"
+        plain_text += (
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📄 Message Content:\n\n"
+            f"{body_preview}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━"
+        )
+        await query.edit_message_text(
+            plain_text,
+            reply_markup=keyboard,
+            disable_web_page_preview=True,
+        )
 
 # ────────────────────────────────────────────────────────────────
 # 📋 Current Email Handler
@@ -755,7 +786,8 @@ async def background_inbox_poller(app: Application):
     """Polls muellfach.de every 2-3 seconds for active users and forwards new mails"""
     logger.info("Real-time auto-inbox poller started.")
     
-    async with httpx.AsyncClient() as client:
+    timeout_cfg = httpx.Timeout(10.0, connect=5.0)
+    async with httpx.AsyncClient(timeout=timeout_cfg) as client:
         while True:
             try:
                 # 1. Fetch all users who have an active email and auto_forward enabled
@@ -764,7 +796,7 @@ async def background_inbox_poller(app: Application):
                     await asyncio.sleep(POLL_INTERVAL)
                     continue
 
-                # 2. Trigger IMAP sync on muellfach server
+                # 2. Trigger IMAP sync on muellfach server to pull incoming emails
                 await sync_mailbox(client)
 
                 # Group user_ids by active_email
@@ -781,57 +813,73 @@ async def background_inbox_poller(app: Application):
                         if not mails:
                             continue
 
-                        for mail_item in mails:
-                            mid = mail_item["id"]
+                        # Process in arrival order (oldest first, newest last) like real SMS
+                        for mail_item in reversed(mails):
+                            mid = mail_item.get("id")
+                            if not mid:
+                                continue
+
                             already_seen = await is_message_seen(email, mid)
                             if already_seen:
                                 continue
 
-                            # Mark as seen immediately to avoid duplicate notifications
-                            await mark_message_seen(email, mid)
-
                             # Fetch full mail details
                             full_mail = await get_single_mail(client, email, mid)
-                            if not full_mail:
-                                continue
+                            if full_mail:
+                                subject = full_mail.get("subject") or "(No Subject)"
+                                sender = (
+                                    full_mail.get("sender_name")
+                                    or full_mail.get("sender_email")
+                                    or "Unknown"
+                                )
+                                date_str = full_mail.get("received_at", "")
+                                body_raw = full_mail.get("body_text") or strip_html_tags(
+                                    full_mail.get("body_html", "")
+                                )
+                            else:
+                                # Fallback to mail_item data so email is never lost!
+                                subject = mail_item.get("subject") or "(No Subject)"
+                                sender = (
+                                    mail_item.get("sender_name")
+                                    or mail_item.get("sender_email")
+                                    or "Unknown"
+                                )
+                                date_str = mail_item.get("received_at", "")
+                                body_raw = ""
 
-                            subject = full_mail.get("subject") or "(No Subject)"
-                            sender = (
-                                full_mail.get("sender_name")
-                                or full_mail.get("sender_email")
-                                or "Unknown"
-                            )
-                            date_str = full_mail.get("received_at", "")
-                            body_raw = full_mail.get("body_text") or strip_html_tags(
-                                full_mail.get("body_html", "")
-                            )
                             otp = extract_otp_code(f"{subject} {body_raw}")
 
                             otp_section = ""
                             if otp:
                                 otp_section = (
                                     f"━━━━━━━━━━━━━━━━━━━━━\n"
-                                    f"🔑 <b>OTP / Code:</b> <code>{otp}</code>\n"
+                                    f"🔑 <b>OTP / Code:</b> <code>{html.escape(str(otp))}</code>\n"
                                 )
 
                             body_snippet = (
-                                body_raw[:600] if body_raw else "(No content)"
+                                body_raw[:600] if body_raw else ("(No content)" if full_mail else "(Loading preview... click Read Details)")
                             )
 
                             username = email.split("@")[0]
                             web_url = make_web_url(username)
 
+                            sender_esc = html.escape(str(sender))
+                            subject_esc = html.escape(str(subject))
+                            email_esc = html.escape(str(email))
+                            date_esc = html.escape(str(date_str))
+                            body_esc = html.escape(str(body_snippet))
+
                             msg_text = (
                                 f"📬 <b>নতুন ইমেইল এসেছে!</b>\n"
                                 f"━━━━━━━━━━━━━━━━━━━━━\n"
-                                f"📧 <b>To:</b> <code>{email}</code>\n"
-                                f"👤 <b>From:</b> <code>{sender}</code>\n"
-                                f"📝 <b>Subject:</b> <b>{subject}</b>\n"
-                                f"⏰ <b>Time:</b> {date_str}\n"
+                                f"📧 <b>To:</b> <code>{email_esc}</code>\n"
+                                f"👤 <b>From:</b> <code>{sender_esc}</code>\n"
+                                f"📝 <b>Subject:</b> <b>{subject_esc}</b>\n"
+                                f"⏰ <b>Time:</b> {date_esc}\n"
                                 f"{otp_section}"
                                 f"━━━━━━━━━━━━━━━━━━━━━\n"
                                 f"📄 <b>Message Preview:</b>\n\n"
-                                f"{body_snippet}\n"
+                                f"{body_esc}\n"
                                 f"━━━━━━━━━━━━━━━━━━━━━"
                             )
 
@@ -857,6 +905,7 @@ async def background_inbox_poller(app: Application):
                             ])
 
                             # Forward to each user listening to this email
+                            sent_any = False
                             for uid in uids:
                                 try:
                                     await app.bot.send_message(
@@ -866,8 +915,39 @@ async def background_inbox_poller(app: Application):
                                         parse_mode=ParseMode.HTML,
                                         disable_web_page_preview=True,
                                     )
+                                    sent_any = True
                                 except Exception as send_err:
-                                    logger.error(f"Error sending mail to user {uid}: {send_err}")
+                                    logger.warning(f"HTML send failed for user {uid}: {send_err}. Falling back to plain text...")
+                                    try:
+                                        plain_msg = (
+                                            f"📬 নতুন ইমেইল এসেছে!\n"
+                                            f"━━━━━━━━━━━━━━━━━━━━━\n"
+                                            f"📧 To: {email}\n"
+                                            f"👤 From: {sender}\n"
+                                            f"📝 Subject: {subject}\n"
+                                            f"⏰ Time: {date_str}\n"
+                                        )
+                                        if otp:
+                                            plain_msg += f"━━━━━━━━━━━━━━━━━━━━━\n🔑 OTP / Code: {otp}\n"
+                                        plain_msg += (
+                                            f"━━━━━━━━━━━━━━━━━━━━━\n"
+                                            f"📄 Message Preview:\n\n"
+                                            f"{body_snippet}\n"
+                                            f"━━━━━━━━━━━━━━━━━━━━━"
+                                        )
+                                        await app.bot.send_message(
+                                            chat_id=uid,
+                                            text=plain_msg,
+                                            reply_markup=keyboard,
+                                            disable_web_page_preview=True,
+                                        )
+                                        sent_any = True
+                                    except Exception as plain_err:
+                                        logger.error(f"Error sending plain text mail to user {uid}: {plain_err}")
+
+                            # Mark as seen ONLY after successful delivery
+                            if sent_any:
+                                await mark_message_seen(email, mid)
 
                     except Exception as email_err:
                         logger.error(f"Error polling email {email}: {email_err}")
@@ -876,6 +956,17 @@ async def background_inbox_poller(app: Application):
                 logger.error(f"Error in background_inbox_poller loop: {e}")
 
             await asyncio.sleep(POLL_INTERVAL)
+
+async def poller_supervisor(app: Application):
+    """Supervises the inbox poller so it automatically recovers from any unexpected errors"""
+    while True:
+        try:
+            await background_inbox_poller(app)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"background_inbox_poller crashed: {e}. Restarting poller in 5s...", exc_info=True)
+            await asyncio.sleep(5)
 
 # ────────────────────────────────────────────────────────────────
 # Lightweight Health Check Server (For Render Web Service Port Binding)
@@ -927,7 +1018,7 @@ async def keep_alive_pinger():
 async def post_init(application: Application):
     """Initializes database and spawns background polling worker"""
     await init_db()
-    asyncio.create_task(background_inbox_poller(application))
+    asyncio.create_task(poller_supervisor(application))
     asyncio.create_task(keep_alive_pinger())
 
 def main():

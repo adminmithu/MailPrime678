@@ -20,8 +20,12 @@ async def sync_mailbox(client: httpx.AsyncClient):
 async def get_mailbox_messages(client: httpx.AsyncClient, email: str):
     """Fetches list of received emails for a given address"""
     try:
-        url = f"{MUELLFACH_API_URL}?action=mails&address={email}"
-        resp = await client.get(url, headers=HEADERS, timeout=8.0)
+        resp = await client.get(
+            MUELLFACH_API_URL,
+            params={"action": "mails", "address": email},
+            headers=HEADERS,
+            timeout=8.0,
+        )
         if resp.status_code == 200:
             data = resp.json()
             if data.get("status") == "ok":
@@ -33,8 +37,12 @@ async def get_mailbox_messages(client: httpx.AsyncClient, email: str):
 async def get_single_mail(client: httpx.AsyncClient, email: str, mail_id: int):
     """Fetches full content of an email by id"""
     try:
-        url = f"{MUELLFACH_API_URL}?action=mail&id={mail_id}&address={email}"
-        resp = await client.get(url, headers=HEADERS, timeout=8.0)
+        resp = await client.get(
+            MUELLFACH_API_URL,
+            params={"action": "mail", "id": mail_id, "address": email},
+            headers=HEADERS,
+            timeout=8.0,
+        )
         if resp.status_code == 200:
             data = resp.json()
             if data.get("status") == "ok" and data.get("mail"):
@@ -76,7 +84,11 @@ def extract_otp_code(text: str) -> str | None:
     # Fallback pattern: 4 to 8 digit standalone numbers with spaces/hyphens
     digits = re.findall(r'\b(?:\d{3}[-\s]\d{3}|\d{4,8})\b', text)
     if digits:
-        # take the first likely code
-        return digits[0].replace(' ', '').replace('-', '')
+        for d in digits:
+            code = d.replace(' ', '').replace('-', '')
+            # Skip common years
+            if code in ("2023", "2024", "2025", "2026", "2027", "2028", "2029", "2030"):
+                continue
+            return code
         
     return None

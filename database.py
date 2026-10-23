@@ -4,6 +4,8 @@ from config import DB_PATH, RETENTION_DAYS
 
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("PRAGMA journal_mode=WAL;")
+        await db.execute("PRAGMA busy_timeout=5000;")
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -144,12 +146,23 @@ async def mark_message_seen(email: str, message_id: int):
         )
         await db.commit()
 
+async def get_email_by_message_id(message_id: int) -> str | None:
+    """Finds the email address associated with a seen message_id"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT email FROM seen_messages WHERE message_id = ? LIMIT 1",
+            (message_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
 async def get_active_users_to_poll():
     """Returns list of (user_id, active_email) for users with active_email and auto_forward=1"""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("""
             SELECT user_id, active_email
             FROM users
-            WHERE active_email IS NOT NULL AND auto_forward = 1
+            WHERE active_email IS NOT NULL AND active_email != '' AND auto_forward = 1
         """) as cursor:
             return await cursor.fetchall()
+
