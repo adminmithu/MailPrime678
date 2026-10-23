@@ -14,6 +14,7 @@ if sys.platform == "win32":
         pass
 import httpx
 from telegram import (
+    CopyTextButton,
     KeyboardButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -253,11 +254,11 @@ async def saved_mails_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         is_curr = " (Active ✅)" if item["email"] == active else ""
         button_text = f"✉️ {item['email']}{is_curr}"
         keyboard_buttons.append([
-            InlineKeyboardButton(button_text, callback_data=f"switch_mail:{item['id']}")
+            InlineKeyboardButton(button_text, callback_data=f"switch_mail:{item['id']}", style="primary")
         ])
         
     keyboard_buttons.append([
-        InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu")
+        InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu", style="danger")
     ])
 
     reply_markup = InlineKeyboardMarkup(keyboard_buttons)
@@ -311,7 +312,7 @@ async def switch_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 রিফ্রেশ ইনবক্স", callback_data="check_active_inbox")],
+        [InlineKeyboardButton("🔄 রিফ্রেশ ইনবক্স", callback_data="check_active_inbox", style="success")],
         [InlineKeyboardButton("🌐 ওয়েব ভিউ", url=web_url)],
     ])
 
@@ -355,7 +356,7 @@ async def refresh_inbox_handler(update: Update, context: ContextTypes.DEFAULT_TY
 
     if not mails:
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 আবার চেক করুন", callback_data="check_active_inbox")],
+            [InlineKeyboardButton("🔄 আবার চেক করুন", callback_data="check_active_inbox", style="success")],
             [InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)],
         ])
         await status_msg.edit_text(
@@ -382,10 +383,19 @@ async def refresh_inbox_handler(update: Update, context: ContextTypes.DEFAULT_TY
         sender = m.get("sender_name") or m.get("sender_email") or "Unknown"
         subject = m.get("subject") or "(No Subject)"
         date_str = m.get("received_at", "")
-        text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n\n"
-        buttons.append([InlineKeyboardButton(f"📖 পড়ুন: {subject[:25]}", callback_data=f"read_mail:{mid}")])
+        item_code = extract_otp_code(subject)
 
-    buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox")])
+        row = [InlineKeyboardButton(f"📖 {subject[:20]}", callback_data=f"read_mail:{mid}", style="primary")]
+        if item_code:
+            row.append(InlineKeyboardButton(f"📋 Copy: {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
+        buttons.append(row)
+
+        text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n"
+        if item_code:
+            text += f"🔑 <b>কোড:</b> <code>{item_code}</code>\n"
+        text += "\n"
+
+    buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox", style="success")])
     buttons.append([InlineKeyboardButton("🌐 ওয়েবে ফুল দেখুন", url=web_url)])
 
     await status_msg.edit_text(
@@ -416,7 +426,7 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
 
     if not mails:
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 আবার রিফ্রেশ", callback_data="check_active_inbox")],
+            [InlineKeyboardButton("🔄 আবার রিফ্রেশ", callback_data="check_active_inbox", style="success")],
             [InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)],
         ])
         await query.edit_message_text(
@@ -442,10 +452,19 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
         sender = m.get("sender_name") or m.get("sender_email") or "Unknown"
         subject = m.get("subject") or "(No Subject)"
         date_str = m.get("received_at", "")
-        text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n\n"
-        buttons.append([InlineKeyboardButton(f"📖 পড়ুন: {subject[:25]}", callback_data=f"read_mail:{mid}")])
+        item_code = extract_otp_code(subject)
 
-    buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox")])
+        row = [InlineKeyboardButton(f"📖 {subject[:20]}", callback_data=f"read_mail:{mid}", style="primary")]
+        if item_code:
+            row.append(InlineKeyboardButton(f"📋 Copy: {item_code}", copy_text=CopyTextButton(text=item_code), style="success"))
+        buttons.append(row)
+
+        text += f"🔹 <b>{subject}</b>\n👤 প্রেরক: <code>{sender}</code>\n⏰ সময়: {date_str}\n"
+        if item_code:
+            text += f"🔑 <b>কোড:</b> <code>{item_code}</code>\n"
+        text += "\n"
+
+    buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox", style="success")])
     buttons.append([InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)])
 
     await query.edit_message_text(
@@ -506,8 +525,14 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     username = active_email.split("@")[0]
     web_url = make_web_url(username)
 
+    row_buttons = [InlineKeyboardButton("⬅️ ইনবক্সে ফেরত যান", callback_data="check_active_inbox")]
+    if otp:
+        row_buttons.append(
+            InlineKeyboardButton(f"📋 Copy OTP: {otp}", copy_text=CopyTextButton(text=otp), style="success")
+        )
+
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ ইনবক্সে ফেরত যান", callback_data="check_active_inbox")],
+        row_buttons,
         [InlineKeyboardButton("🌐 ওয়েবে ফুল দেখুন", url=web_url)],
     ])
 
@@ -553,7 +578,7 @@ async def current_email_handler(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔄 ইনবক্স চেক করুন", callback_data="check_active_inbox")],
+        [InlineKeyboardButton("🔄 ইনবক্স চেক করুন", callback_data="check_active_inbox", style="success")],
         [InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)],
     ])
 
@@ -622,10 +647,10 @@ async def setting_fuetch_handler(update: Update, context: ContextTypes.DEFAULT_T
     auto_btn_text = "🔔 অটো-ফরওয়ার্ড: চালু ✅" if auto_fwd == 1 else "🔕 অটো-ফরওয়ার্ড: বন্ধ ❌"
     
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(auto_btn_text, callback_data="toggle_autoforward")],
-        [InlineKeyboardButton("🧹 ক্লিয়ার ১০-দিনের হিস্ট্রি", callback_data="confirm_clear_history")],
-        [InlineKeyboardButton("ℹ️ About MailFuetch", callback_data="about_mailfuetch")],
-        [InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu")],
+        [InlineKeyboardButton(auto_btn_text, callback_data="toggle_autoforward", style="primary")],
+        [InlineKeyboardButton("🧹 ক্লিয়ার ১০-দিনের হিস্ট্রি", callback_data="confirm_clear_history", style="danger")],
+        [InlineKeyboardButton("ℹ️ About MailFuetch", callback_data="about_mailfuetch", style="primary")],
+        [InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu", style="danger")],
     ])
 
     await update.message.reply_text(
@@ -643,10 +668,10 @@ async def toggle_autoforward_callback(update: Update, context: ContextTypes.DEFA
     
     auto_btn_text = "🔔 অটো-ফরওয়ার্ড: চালু ✅" if new_val == 1 else "🔕 অটো-ফরওয়ার্ড: বন্ধ ❌"
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(auto_btn_text, callback_data="toggle_autoforward")],
-        [InlineKeyboardButton("🧹 ক্লিয়ার ১০-দিনের হিস্ট্রি", callback_data="confirm_clear_history")],
-        [InlineKeyboardButton("ℹ️ About MailFuetch", callback_data="about_mailfuetch")],
-        [InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu")],
+        [InlineKeyboardButton(auto_btn_text, callback_data="toggle_autoforward", style="primary")],
+        [InlineKeyboardButton("🧹 ক্লিয়ার ১০-দিনের হিস্ট্রি", callback_data="confirm_clear_history", style="danger")],
+        [InlineKeyboardButton("ℹ️ About MailFuetch", callback_data="about_mailfuetch", style="primary")],
+        [InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu", style="danger")],
     ])
     await query.edit_message_reply_markup(reply_markup=keyboard)
 
@@ -654,18 +679,24 @@ async def about_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     about_text = (
-        "ℹ️ <b>About MailFuetch:</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━\n"
-        "• <b>সার্ভিস:</b> Powered by Müllfach.de\n"
-        "• <b>মেয়াদ:</b> প্রতিটি মেইল ১০ দিন পর্যন্ত সংরক্ষিত থাকে\n"
-        "• <b>স্পিড:</b> ২-৩ সেকেন্ডে রিয়েল-টাইম অটো নোটিফিকেশন\n"
-        "• <b>সিকিউরিটি:</b> স্প্যাম ও অপ্রয়োজনীয় মেইল থেকে আপনার পার্সোনাল মেইলকে নিরাপদ রাখুন।\n"
-        "━━━━━━━━━━━━━━━━━━━━━"
+        f"🌐 <b>Müllfach.de — অফিশিয়াল ওয়েবসাইট প্ল্যাটফর্ম:</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"<b>Müllfach.de</b> হলো একটি আধুনিক, দ্রুত এবং অত্যন্ত বিশ্বস্ত ডিসপোজেবল টেম্পোরারি ইমেইল প্ল্যাটফর্ম। "
+        f"অনাকাঙ্ক্ষিত স্প্যাম, ফিশিং, ডেটা ট্র্যাকিং ও বিজ্ঞাপন থেকে আপনার ব্যক্তিগত ইমেইলকে সুরক্ষিত রাখতে এটি তৈরি করা হয়েছে।\n\n"
+        f"✨ <b>ওয়েবসাইটের মূল সুবিধাসমূহ:</b>\n"
+        f"• <b>১০০% ফ্রি ও কোনো পাসওয়ার্ড ছাড়াই:</b> কোনো প্রকার রেজিস্ট্রেশন বা ক্রেডিট কার্ড ছাড়াই তাৎক্ষণিক ইনবক্স অ্যাক্সেস।\n"
+        f"• <b>৩০ দিনের দীর্ঘস্থায়ী মেয়াদ:</b> অন্যান্য টেম্পোরারি মেইল সাইট যেখানে ১০-১৫ মিনিটে ইনবক্স মুছে দেয়, সেখানে Müllfach-এ মেইল ৩০ দিন পর্যন্ত সংরক্ষিত থাকে!\n"
+        f"• <b>হাই-স্পিড IMAP সিঙ্ক:</b> সরাসরি ডেডিকেটেড মেইল সার্ভারের সাথে লাইভ সংযোগ, ফলে ২ সেকেন্ডে মেসেজ ও ওটিপি চলে আসে।\n"
+        f"• <b>কাস্টম এড্রেস সাপোর্ট:</b> নিজের পছন্দের নাম বা ইউজারনেম দিয়ে যেকোনো সময় পোস্টফাক তৈরি করার স্বাধীনতা।\n"
+        f"• <b>অটো স্প্যাম ও ম্যালওয়্যার প্রোটেকশন:</b> নিরাপদ ব্রাউজিং ও ইনবক্স অভিজ্ঞতা।\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔗 <b>অফিশিয়াল ওয়েবসাইট:</b> <a href=\"{MUELLFACH_BASE_URL}\">{MUELLFACH_BASE_URL}</a>"
     )
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬅️ ব্যাক", callback_data="back_to_settings")]
+        [InlineKeyboardButton("🌐 ভিজিট ওয়েবসাইট", url=MUELLFACH_BASE_URL)],
+        [InlineKeyboardButton("⬅️ ব্যাক টু সেটিংস", callback_data="back_to_settings")],
     ])
-    await query.edit_message_text(about_text, reply_markup=keyboard, parse_mode=ParseMode.HTML)
+    await query.edit_message_text(about_text, reply_markup=keyboard, parse_mode=ParseMode.HTML, disable_web_page_preview=True)
 
 async def clear_history_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -698,10 +729,10 @@ async def back_to_settings_callback(update: Update, context: ContextTypes.DEFAUL
     auto_btn_text = "🔔 অটো-ফরওয়ার্ড: চালু ✅" if auto_fwd == 1 else "🔕 অটো-ফরওয়ার্ড: বন্ধ ❌"
     
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(auto_btn_text, callback_data="toggle_autoforward")],
-        [InlineKeyboardButton("🧹 ক্লিয়ার ১০-দিনের হিস্ট্রি", callback_data="confirm_clear_history")],
-        [InlineKeyboardButton("ℹ️ About MailFuetch", callback_data="about_mailfuetch")],
-        [InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu")],
+        [InlineKeyboardButton(auto_btn_text, callback_data="toggle_autoforward", style="primary")],
+        [InlineKeyboardButton("🧹 ক্লিয়ার ১০-দিনের হিস্ট্রি", callback_data="confirm_clear_history", style="danger")],
+        [InlineKeyboardButton("ℹ️ About MailFuetch", callback_data="about_mailfuetch", style="primary")],
+        [InlineKeyboardButton("❌ মেন্যু বন্ধ করুন", callback_data="close_menu", style="danger")],
     ])
     await query.edit_message_text(
         "⚙️ <b>MailFuetch Settings:</b>\n\nনিচে থেকে আপনার পছন্দমতো সেটিংস পরিবর্তন করুন:",
@@ -802,14 +833,25 @@ async def background_inbox_poller(app: Application):
                                 f"━━━━━━━━━━━━━━━━━━━━━"
                             )
 
-                            keyboard = InlineKeyboardMarkup([
-                                [
+                            action_row = [
+                                InlineKeyboardButton(
+                                    "📖 সম্পূর্ণ মেইল পড়ুন",
+                                    callback_data=f"read_mail:{mid}",
+                                    style="primary",
+                                )
+                            ]
+                            if otp:
+                                action_row.append(
                                     InlineKeyboardButton(
-                                        "📖 সম্পূর্ণ মেইল পড়ুন",
-                                        callback_data=f"read_mail:{mid}",
-                                    ),
-                                    InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url),
-                                ]
+                                        f"📋 Copy OTP: {otp}",
+                                        copy_text=CopyTextButton(text=otp),
+                                        style="success",
+                                    )
+                                )
+
+                            keyboard = InlineKeyboardMarkup([
+                                action_row,
+                                [InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)],
                             ])
 
                             # Forward to each user listening to this email
