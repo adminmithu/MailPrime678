@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Environment variables (contains bot token)
+.env
+.env.local
+
+# SQLite Database
+*.db
+*.sqlite3
+
+# Logs
+*.log
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
