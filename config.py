@@ -3,8 +3,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Telegram Bot Token
+# Telegram Bot Token & Admin Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "8929349073"))
 
 # Domain & Platform Configuration
 DOMAIN = os.getenv("DOMAIN", "muellfach.de")
