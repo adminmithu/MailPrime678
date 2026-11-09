@@ -99,15 +99,19 @@ def get_uptime_str() -> str:
     parts.append(f"{seconds} সেকেন্ড")
     return " ".join(parts)
 
-# States for Admin Conversations
+# States for Conversations
 WAITING_BROADCAST = 1
 WAITING_DIRECT_MSG = 2
+WAITING_LOGIN_INPUT = 3
 
 # Main Reply Keyboard with Native Button Background Colors
 MAIN_KEYBOARD = ReplyKeyboardMarkup(
     [
         [
             KeyboardButton("📧 Create Mail", style="success"),
+        ],
+        [
+            KeyboardButton("🔑 Login Acc", style="primary"),
         ],
         [
             KeyboardButton("📥 Current Inbox", style="primary"),
@@ -144,10 +148,13 @@ ADMIN_KEYBOARD = ReplyKeyboardMarkup(
 )
 
 def get_main_keyboard(user_id: int):
-    """Returns main menu with Create Mail at top, Current Inbox, and Admin Panel for Admin"""
+    """Returns main menu with Create Mail at top, Login Acc, Current Inbox, and Admin Panel for Admin"""
     rows = [
         [
             KeyboardButton("📧 Create Mail", style="success"),
+        ],
+        [
+            KeyboardButton("🔑 Login Acc", style="primary"),
         ],
         [
             KeyboardButton("📥 Current Inbox", style="primary"),
@@ -245,6 +252,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"কোনো রেজিস্ট্রেশন ছাড়াই আনলিমিটেড <b>@muellfach.de</b> টেম্পোরারি ইমেইল তৈরি করুন এবং রিয়েল-টাইমে সমস্ত ওটিপি ও মেসেজ গ্রহণ করুন!\n\n"
         f"💎 <b>বটের এক্সক্লুসিভ ফিচারসমূহ:</b>\n"
         f"• ⚡ <b>১-ক্লিক ইনস্ট্যান্ট মেইল:</b> কোনো ঝামেলা ছাড়াই মানুষের মতো বাস্তবধর্মী সুন্দর নামে মেইল তৈরি।\n"
+        f"• 🔑 <b>Login Acc:</b> যেকোনো পূর্বের ইউজারনেম বা মেইল দিয়ে লগইন করে ইনবক্স ব্যবহার।\n"
         f"• 📋 <b>ওয়ান-ট্যাপ কপি:</b> ইমেইল এড্রেস ও ওটিপি এক ক্লিকেই সরাসরি ক্লিপবোর্ডে কপি করুন।\n"
         f"• 📸 <b>ইনস্টাগ্রাম ও অন্যান্য অ্যাপ সাপোর্ট:</b> Instagram, Discord, Facebook, Telegram ও যেকোনো সার্ভিসের ওটিপি নিখুঁতভাবে রিসিভ হবে।\n"
         f"• ⚡ <b>রিয়েল-টাইম অটো-ফরওয়ার্ড:</b> নতুন মেসেজ আসার ১ সেকেন্ডের মধ্যেই সরাসরি আপনার চ্যাটে চলে আসবে!\n"
@@ -314,6 +322,114 @@ async def create_mail_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode=ParseMode.HTML,
             disable_web_page_preview=True,
         )
+
+# ────────────────────────────────────────────────────────────────
+# 🔑 Login Account Handler (Connect via Username or Email)
+# ────────────────────────────────────────────────────────────────
+
+async def login_acc_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prompts user to enter their email username or full email address"""
+    user_id = update.effective_user.id
+    text = (
+        "🔐 <b>আপনার একাউন্টে লগইন করুন:</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"আপনার পূর্বে ব্যবহৃত বা যেকোনো <b>@{DOMAIN}</b> মেইলের <b>ইউজারনেম</b> অথবা <b>পুরো ইমেইল এড্রেস</b> লিখে পাঠান:\n\n"
+        f"💡 <i>যেমন:</i>\n"
+        f"<code>sobujroy6575687</code>\n"
+        f"অথবা\n"
+        f"<code>sobujroy6575687@{DOMAIN}</code>\n\n"
+        f"❌ বাতিল করতে /cancel লিখুন।"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    return WAITING_LOGIN_INPUT
+
+async def login_acc_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Processes login and connects user to the specified mailbox"""
+    user = update.effective_user
+    user_id = user.id
+    raw_input = update.message.text.strip()
+
+    # Extract username (support both 'name' and 'name@domain')
+    if "@" in raw_input:
+        username = raw_input.split("@")[0].strip().lower()
+    else:
+        username = raw_input.strip().lower()
+
+    # Clean username: remove spaces
+    username = re.sub(r"\s+", "", username)
+
+    if len(username) < 3 or not re.match(r"^[a-zA-Z0-9_\-]+$", username):
+        await update.message.reply_text(
+            "❌ <b>অকার্যকর ইউজারনেম!</b>\n\n"
+            "অনুগ্রহ করে শুধুমাত্র ইংরেজি অক্ষর (a-z), সংখ্যা (0-9), ড্যাশ বা আন্ডারস্কোর ব্যবহার করুন (কমপক্ষে ৩ অক্ষর)।\n\n"
+            "দয়া করে আবার লিখুন অথবা /cancel লিখুন:",
+            parse_mode=ParseMode.HTML,
+        )
+        return WAITING_LOGIN_INPUT
+
+    email_address = f"{username}@{DOMAIN}"
+    web_url = make_web_url(username)
+
+    status_msg = await update.message.reply_text(
+        f"⏳ <code>{email_address}</code> এর সাথে কানেক্ট করা হচ্ছে...",
+        parse_mode=ParseMode.HTML,
+    )
+
+    # Save to user's database and set as active email
+    await save_email(user_id, email_address, username)
+
+    # Trigger IMAP sync and fetch existing messages
+    async with httpx.AsyncClient() as client:
+        await sync_mailbox(client)
+        mails = await get_mailbox_messages(client, email_address)
+
+    inbox_summary = ""
+    if mails:
+        inbox_summary = f"\n\n📬 <b>ইনবক্সে {len(mails)} টি মেইল রয়েছে!</b>"
+        for i, m in enumerate(mails[:3], 1):
+            s_subj = html.escape(m.get("subject") or "(No Subject)")
+            s_from = html.escape(m.get("sender_name") or m.get("sender_email") or "Unknown")
+            inbox_summary += f"\n{i}. <b>{s_subj}</b> — <i>{s_from}</i>"
+    else:
+        inbox_summary = "\n\n📭 <i>ইনবক্স বর্তমানে খালি। কোনো নতুন মেসেজ আসলে সাথে সাথে নোটিফিকেশন পাবেন।</i>"
+
+    success_text = (
+        f"✅ <b>সফলভাবে একাউন্টে লগইন সম্পন্ন হয়েছে!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📧 <b>Active Email:</b> <code>{email_address}</code>\n"
+        f"<i>(ট্যাপ করলেই কপি হয়ে যাবে)</i>\n\n"
+        f"🌐 <b>Web Link:</b> <a href=\"{web_url}\">Müllfach Postfach</a>\n"
+        f"⚡ <b>রিয়েল-টাইম অটো ইনবক্স:</b> সক্রিয় আছে ✅\n"
+        f"━━━━━━━━━━━━━━━━━━━━━"
+        f"{inbox_summary}"
+    )
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📋 Copy Email", copy_text=CopyTextButton(text=email_address), style="success")],
+        [InlineKeyboardButton("📥 ইনবক্স চেক করুন", callback_data="check_active_inbox", style="primary")],
+        [InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)],
+    ])
+
+    await status_msg.edit_text(
+        success_text,
+        reply_markup=keyboard,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+    )
+    await update.message.reply_text(
+        "👇 নিচের মেন্যু থেকে কাজ চালিয়ে যেতে পারেন:",
+        reply_markup=get_main_keyboard(user_id),
+    )
+    return ConversationHandler.END
+
+async def cancel_login_acc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancels login process"""
+    user_id = update.effective_user.id
+    await update.message.reply_text(
+        "❌ লগইন বাতিল করা হয়েছে।",
+        reply_markup=get_main_keyboard(user_id),
+    )
+    return ConversationHandler.END
 
 # ────────────────────────────────────────────────────────────────
 # 📁 Saved Mails (10-Day History & Switcher)
@@ -1284,7 +1400,7 @@ async def background_inbox_poller(app: Application):
 
                                 action_row = []
                                 if otp:
-                                    btn_label = f"📋 Copy Instagram Code: {otp}" if is_ig else f"📋 {otp}"
+                                    btn_label = f"📋 {otp}"
                                     action_row.append(
                                         InlineKeyboardButton(
                                             btn_label,
@@ -1477,6 +1593,21 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_admin_action)],
     )
     app.add_handler(direct_msg_conv)
+
+    # 1.1 User Login Account Conversation Handler
+    login_acc_conv = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex(r"^(🔑 Login Acc|Login Acc|/login)$"), login_acc_prompt),
+            CommandHandler("login", login_acc_prompt),
+        ],
+        states={
+            WAITING_LOGIN_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, login_acc_process)
+            ]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_login_acc)],
+    )
+    app.add_handler(login_acc_conv)
 
     # 2. Admin Action Handlers
     app.add_handler(CommandHandler("admin", admin_panel_handler))
