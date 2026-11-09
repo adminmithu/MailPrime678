@@ -94,7 +94,23 @@ def extract_otp_code(text: str) -> str | None:
     clean = re.sub(r'<[^>]+>', ' ', clean)
     clean = re.sub(r'[\r\n\t]+', ' ', clean)
 
-    # 1. Instagram specific pattern: '123 456 is your Instagram code' or '123456 is your Instagram code'
+    # 1. Instagram specific patterns (Supports English, German, and general Instagram formats)
+    if "instagram" in clean.lower():
+        ig_m = re.search(
+            r'\b([0-9]{3}\s?[0-9]{3})\b(?:\s+(?:is|ist)\s+(?:your|dein|ihr)\s+[\w\s\-]{0,25}?(?:code|otp))',
+            clean,
+            re.IGNORECASE,
+        )
+        if ig_m:
+            return ig_m.group(1).replace(' ', '')
+        # Any 6-digit number in an Instagram email is the verification code
+        ig_any = re.search(r'\b([0-9]{6}|[0-9]{3}\s[0-9]{3})\b', clean)
+        if ig_any:
+            val = ig_any.group(1).replace(' ', '')
+            if not (val.isdigit() and int(val) in range(1950, 2035)):
+                return val
+
+    # Standard fallback pattern: '123 456 is your Instagram code'
     ig_m = re.search(r'\b([0-9]{3}\s?[0-9]{3})\b\s+(?:is\s+your\s+instagram\s+code|to\s+verify\s+your\s+instagram)', clean, re.IGNORECASE)
     if ig_m:
         return ig_m.group(1).replace(' ', '')

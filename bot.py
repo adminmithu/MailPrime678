@@ -599,7 +599,7 @@ async def current_inbox_handler(update: Update, context: ContextTypes.DEFAULT_TY
         sender = m.get("sender_name") or m.get("sender_email") or "Unknown"
         subject = m.get("subject") or "(No Subject)"
         date_str = m.get("received_at", "")
-        item_code = extract_otp_code(subject)
+        item_code = extract_otp_code(subject) or extract_otp_code(f"{sender} {subject}")
 
         is_ig = "instagram" in (sender + subject).lower()
         icon = "📸" if is_ig else "📖"
@@ -681,7 +681,7 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
         sender = m.get("sender_name") or m.get("sender_email") or "Unknown"
         subject = m.get("subject") or "(No Subject)"
         date_str = m.get("received_at", "")
-        item_code = extract_otp_code(subject)
+        item_code = extract_otp_code(subject) or extract_otp_code(f"{sender} {subject}")
 
         is_ig = "instagram" in (str(sender) + str(subject)).lower()
         icon = "📸" if is_ig else "📖"
@@ -740,6 +740,8 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     otp = extract_otp_code(subject) or extract_otp_code(raw_body)
     if not otp and mail_data.get("body_html"):
         otp = extract_otp_code(strip_html_tags(mail_data.get("body_html", "")))
+    if not otp:
+        otp = extract_otp_code(f"{sender} {subject} {raw_body}")
 
     is_ig = "instagram" in (str(sender) + str(subject) + str(raw_body)).lower()
     header_title = "📸 <b>Instagram ইমেইল বিবরণ:</b>" if is_ig else "✉️ <b>ইমেইল বিবরণ:</b>"
@@ -768,16 +770,17 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     username = target_email.split("@")[0]
     web_url = make_web_url(username)
 
-    row_buttons = [InlineKeyboardButton("⬅️ ইনবক্স", callback_data="check_active_inbox", style="primary")]
+    keyboard_rows = []
     if otp:
-        row_buttons.append(
+        keyboard_rows.append([
             InlineKeyboardButton(f"📋 {otp}", copy_text=CopyTextButton(text=otp), style="success")
-        )
-
-    keyboard = InlineKeyboardMarkup([
-        row_buttons,
-        [InlineKeyboardButton("🌐 ওয়েবে ফুল দেখুন", url=web_url)],
+        ])
+    keyboard_rows.append([
+        InlineKeyboardButton("⬅️ ইনবক্স", callback_data="check_active_inbox", style="primary"),
+        InlineKeyboardButton("🌐 ওয়েবে ফুল দেখুন", url=web_url),
     ])
+
+    keyboard = InlineKeyboardMarkup(keyboard_rows)
 
     try:
         await query.edit_message_text(
@@ -1358,6 +1361,8 @@ async def background_inbox_poller(app: Application):
                                 otp = extract_otp_code(subject) or extract_otp_code(body_raw)
                                 if not otp and full_mail and full_mail.get("body_html"):
                                     otp = extract_otp_code(strip_html_tags(full_mail.get("body_html", "")))
+                                if not otp:
+                                    otp = extract_otp_code(f"{sender} {subject} {body_raw}")
 
                                 is_ig = "instagram" in (str(sender) + str(subject) + str(body_raw)).lower()
                                 title_header = "📸 <b>ইনস্টাগ্রাম ভেরিফিকেশন কোড এসেছে!</b>" if (is_ig and otp) else ("📸 <b>ইনস্টাগ্রাম থেকে নতুন মেইল এসেছে!</b>" if is_ig else "📬 <b>নতুন ইমেইল এসেছে!</b>")
@@ -1398,28 +1403,25 @@ async def background_inbox_poller(app: Application):
                                     f"━━━━━━━━━━━━━━━━━━━━━"
                                 )
 
-                                action_row = []
+                                keyboard_rows = []
                                 if otp:
-                                    btn_label = f"📋 {otp}"
-                                    action_row.append(
+                                    keyboard_rows.append([
                                         InlineKeyboardButton(
-                                            btn_label,
+                                            f"📋 {otp}",
                                             copy_text=CopyTextButton(text=otp),
                                             style="success",
                                         )
-                                    )
-                                action_row.append(
+                                    ])
+                                keyboard_rows.append([
                                     InlineKeyboardButton(
                                         "📖 বিস্তারিত",
                                         callback_data=f"read_mail:{mid}",
                                         style="primary",
-                                    )
-                                )
-
-                                keyboard = InlineKeyboardMarkup([
-                                    action_row,
-                                    [InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)],
+                                    ),
+                                    InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url),
                                 ])
+
+                                keyboard = InlineKeyboardMarkup(keyboard_rows)
 
                                 # Forward to each user listening to this email
                                 sent_any = False
