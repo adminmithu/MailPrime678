@@ -672,16 +672,20 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
             [InlineKeyboardButton("🔄 আবার রিফ্রেশ", callback_data="check_active_inbox", style="primary")],
             [InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)],
         ])
-        await query.edit_message_text(
-            f"📭 <b>ইনবক্স এখনো খালি!</b>\n\n"
-            f"📧 <b>মেইল:</b> <code>{active_email}</code>\n"
-            f"<i>(ট্যাপ করলেই কপি হয়ে যাবে)</i>\n\n"
-            f"🌐 <b>ওয়েব:</b> <a href=\"{web_url}\">Postfach Link</a>\n\n"
-            f"অপেক্ষা করুন, নতুন ইমেইল আসলে বট সাথে সাথে আপনাকে পাঠিয়ে দেবে।",
-            reply_markup=keyboard,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-        )
+        try:
+            await query.edit_message_text(
+                f"📭 <b>ইনবক্স এখনো খালি!</b>\n\n"
+                f"📧 <b>মেইল:</b> <code>{active_email}</code>\n"
+                f"<i>(ট্যাপ করলেই কপি হয়ে যাবে)</i>\n\n"
+                f"🌐 <b>ওয়েব:</b> <a href=\"{web_url}\">Postfach Link</a>\n\n"
+                f"অপেক্ষা করুন, নতুন ইমেইল আসলে বট সাথে সাথে আপনাকে পাঠিয়ে দেবে।",
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except Exception as e:
+            if "Message is not modified" not in str(e):
+                logger.warning(f"Error editing empty inbox: {e}")
         return
 
     text = (
@@ -740,12 +744,16 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
     buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox", style="primary")])
     buttons.append([InlineKeyboardButton("🌐 ওয়েবে দেখুন", url=web_url)])
 
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(buttons),
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=True,
-    )
+    try:
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(buttons),
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    except Exception as e:
+        if "Message is not modified" not in str(e):
+            logger.warning(f"Error editing inbox message: {e}")
 
 async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays single mail details when user clicks Read button"""
@@ -1801,6 +1809,9 @@ def main():
     app.add_handler(CallbackQueryHandler(close_menu_callback, pattern=r"^close_menu$"))
 
     async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        err_msg = str(context.error)
+        if "Message is not modified" in err_msg:
+            return  # Benign Telegram error when refresh button is tapped with identical inbox content
         logger.error("Exception while handling an update:", exc_info=context.error)
         if isinstance(update, Update) and update.effective_message:
             try:

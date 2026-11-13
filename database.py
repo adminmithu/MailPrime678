@@ -194,23 +194,36 @@ async def is_message_seen(email: str, message_id: int) -> bool:
             return (await cursor.fetchone()) is not None
 
 async def mark_message_seen(email: str, message_id: int, otp: str = None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO seen_messages (email, message_id, otp) VALUES (?, ?, ?) "
-            "ON CONFLICT(email, message_id) DO UPDATE SET otp = COALESCE(excluded.otp, seen_messages.otp)",
-            (email, message_id, otp)
-        )
-        await db.commit()
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO seen_messages (email, message_id) VALUES (?, ?)",
+                (email, message_id)
+            )
+            if otp:
+                try:
+                    await db.execute(
+                        "UPDATE seen_messages SET otp = ? WHERE email = ? AND message_id = ?",
+                        (otp, email, message_id)
+                    )
+                except Exception:
+                    pass
+            await db.commit()
+    except Exception as e:
+        logger.error(f"Error marking message seen: {e}")
 
 async def get_saved_otp(email: str, message_id: int) -> str | None:
-    """Retrieves saved OTP for a specific email and message_id if available"""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT otp FROM seen_messages WHERE email = ? AND message_id = ? LIMIT 1",
-            (email, message_id)
-        ) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row and row[0] else None
+    """Retrieves saved OTP for a specific email and message_id if available (fail-safe)"""
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT otp FROM seen_messages WHERE email = ? AND message_id = ? LIMIT 1",
+                (email, message_id)
+            ) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row and row[0] else None
+    except Exception:
+        return None
 
 async def get_email_by_message_id(message_id: int) -> str | None:
     """Finds the email address associated with a seen message_id"""
