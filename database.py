@@ -39,10 +39,15 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS seen_messages (
                 email TEXT,
                 message_id INTEGER,
+                otp TEXT,
                 seen_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (email, message_id)
             )
         """)
+        try:
+            await db.execute("ALTER TABLE seen_messages ADD COLUMN otp TEXT")
+        except Exception:
+            pass
         await db.execute("""
             CREATE TABLE IF NOT EXISTS user_messages_log (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -188,13 +193,24 @@ async def is_message_seen(email: str, message_id: int) -> bool:
         ) as cursor:
             return (await cursor.fetchone()) is not None
 
-async def mark_message_seen(email: str, message_id: int):
+async def mark_message_seen(email: str, message_id: int, otp: str = None):
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT OR IGNORE INTO seen_messages (email, message_id) VALUES (?, ?)",
-            (email, message_id)
+            "INSERT INTO seen_messages (email, message_id, otp) VALUES (?, ?, ?) "
+            "ON CONFLICT(email, message_id) DO UPDATE SET otp = COALESCE(excluded.otp, seen_messages.otp)",
+            (email, message_id, otp)
         )
         await db.commit()
+
+async def get_saved_otp(email: str, message_id: int) -> str | None:
+    """Retrieves saved OTP for a specific email and message_id if available"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT otp FROM seen_messages WHERE email = ? AND message_id = ? LIMIT 1",
+            (email, message_id)
+        ) as cursor:
+            row = await cursor.fetchone()
+            return row[0] if row and row[0] else None
 
 async def get_email_by_message_id(message_id: int) -> str | None:
     """Finds the email address associated with a seen message_id"""

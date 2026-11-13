@@ -56,6 +56,7 @@ from database import (
     get_or_create_user,
     get_saved_email_by_id,
     get_saved_emails,
+    get_saved_otp,
     get_top_users,
     init_db,
     is_message_seen,
@@ -594,15 +595,33 @@ async def current_inbox_handler(update: Update, context: ContextTypes.DEFAULT_TY
     buttons = [
         [InlineKeyboardButton("📋 Copy Email", copy_text=CopyTextButton(text=active_email), style="success")]
     ]
-    for m in mails[:5]:
+    for m in mails[:10]:
         mid = m["id"]
         sender = m.get("sender_name") or m.get("sender_email") or "Unknown"
         subject = m.get("subject") or "(No Subject)"
         date_str = m.get("received_at", "")
-        item_code = extract_otp_code(subject) or extract_otp_code(f"{sender} {subject}")
+        item_code = (
+            await get_saved_otp(active_email, mid)
+            or extract_otp_code(subject)
+            or extract_otp_code(f"{sender} {subject}")
+        )
 
-        is_ig = "instagram" in (sender + subject).lower()
-        icon = "📸" if is_ig else "📖"
+        lower_s = (str(sender) + " " + str(subject)).lower()
+        if "instagram" in lower_s:
+            icon = "📸"
+        elif "whatsapp" in lower_s:
+            icon = "💬"
+        elif "google" in lower_s:
+            icon = "🇬"
+        elif "telegram" in lower_s:
+            icon = "✈️"
+        elif "facebook" in lower_s or "meta" in lower_s:
+            icon = "👥"
+        elif "tiktok" in lower_s:
+            icon = "🎵"
+        else:
+            icon = "🔑" if item_code else "📖"
+
         display_subj = f"{icon} {subject[:18]}"
 
         row = [InlineKeyboardButton(display_subj, callback_data=f"read_mail:{mid}", style="primary")]
@@ -613,9 +632,9 @@ async def current_inbox_handler(update: Update, context: ContextTypes.DEFAULT_TY
         s_name = html.escape(sender)
         s_subj = html.escape(subject)
         s_date = html.escape(date_str)
-        text += f"{'📸' if is_ig else '🔹'} <b>{s_subj}</b>\n👤 প্রেরক: <code>{s_name}</code>\n⏰ সময়: {s_date}\n"
+        text += f"{icon} <b>{s_subj}</b>\n👤 প্রেরক: <code>{s_name}</code>\n⏰ সময়: {s_date}\n"
         if item_code:
-            text += f"🔑 <b>{'Instagram ' if is_ig else ''}কোড:</b> <code>{html.escape(item_code)}</code>\n"
+            text += f"🔑 <b>কোড:</b> <code>{html.escape(item_code)}</code>\n"
         text += "\n"
 
     buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ ইনবক্স", callback_data="check_active_inbox", style="primary")])
@@ -676,15 +695,33 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
     buttons = [
         [InlineKeyboardButton("📋 Copy Email", copy_text=CopyTextButton(text=active_email), style="success")]
     ]
-    for m in mails[:5]:
+    for m in mails[:10]:
         mid = m["id"]
         sender = m.get("sender_name") or m.get("sender_email") or "Unknown"
         subject = m.get("subject") or "(No Subject)"
         date_str = m.get("received_at", "")
-        item_code = extract_otp_code(subject) or extract_otp_code(f"{sender} {subject}")
+        item_code = (
+            await get_saved_otp(active_email, mid)
+            or extract_otp_code(subject)
+            or extract_otp_code(f"{sender} {subject}")
+        )
 
-        is_ig = "instagram" in (str(sender) + str(subject)).lower()
-        icon = "📸" if is_ig else "📖"
+        lower_s = (str(sender) + " " + str(subject)).lower()
+        if "instagram" in lower_s:
+            icon = "📸"
+        elif "whatsapp" in lower_s:
+            icon = "💬"
+        elif "google" in lower_s:
+            icon = "🇬"
+        elif "telegram" in lower_s:
+            icon = "✈️"
+        elif "facebook" in lower_s or "meta" in lower_s:
+            icon = "👥"
+        elif "tiktok" in lower_s:
+            icon = "🎵"
+        else:
+            icon = "🔑" if item_code else "📖"
+
         display_subj = f"{icon} {subject[:18]}"
 
         row = [InlineKeyboardButton(display_subj, callback_data=f"read_mail:{mid}", style="primary")]
@@ -695,9 +732,9 @@ async def check_active_inbox_callback(update: Update, context: ContextTypes.DEFA
         s_name = html.escape(sender)
         s_subj = html.escape(subject)
         s_date = html.escape(date_str)
-        text += f"{'📸' if is_ig else '🔹'} <b>{s_subj}</b>\n👤 প্রেরক: <code>{s_name}</code>\n⏰ সময়: {s_date}\n"
+        text += f"{icon} <b>{s_subj}</b>\n👤 প্রেরক: <code>{s_name}</code>\n⏰ সময়: {s_date}\n"
         if item_code:
-            text += f"🔑 <b>{'Instagram ' if is_ig else ''}কোড:</b> <code>{html.escape(item_code)}</code>\n"
+            text += f"🔑 <b>কোড:</b> <code>{html.escape(item_code)}</code>\n"
         text += "\n"
 
     buttons.append([InlineKeyboardButton("🔄 রিফ্রেশ", callback_data="check_active_inbox", style="primary")])
@@ -736,16 +773,69 @@ async def read_mail_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     sender = mail_data.get("sender_name") or mail_data.get("sender_email") or "Unknown"
     date_str = mail_data.get("received_at", "")
     
-    raw_body = mail_data.get("body_text") or strip_html_tags(mail_data.get("body_html", ""))
-    otp = extract_otp_code(subject) or extract_otp_code(raw_body)
-    if not otp and mail_data.get("body_html"):
-        otp = extract_otp_code(strip_html_tags(mail_data.get("body_html", "")))
-    if not otp:
-        otp = extract_otp_code(f"{sender} {subject} {raw_body}")
+    body_html = mail_data.get("body_html", "")
+    raw_body = mail_data.get("body_text") or strip_html_tags(body_html)
+    otp = (
+        await get_saved_otp(target_email, mail_id)
+        or extract_otp_code(subject)
+        or extract_otp_code(raw_body, html_content=body_html)
+        or extract_otp_code(f"{sender} {subject} {raw_body}", html_content=body_html)
+    )
 
-    is_ig = "instagram" in (str(sender) + str(subject) + str(raw_body)).lower()
-    header_title = "📸 <b>Instagram ইমেইল বিবরণ:</b>" if is_ig else "✉️ <b>ইমেইল বিবরণ:</b>"
-    code_label = "Instagram OTP" if is_ig else "OTP / Code"
+    lower_all = (str(sender) + " " + str(subject) + " " + str(raw_body)).lower()
+    service_name = ""
+    service_icon = "🔑"
+    if "instagram" in lower_all:
+        service_name = "Instagram"
+        service_icon = "📸"
+    elif "whatsapp" in lower_all:
+        service_name = "WhatsApp"
+        service_icon = "💬"
+    elif "google" in lower_all:
+        service_name = "Google"
+        service_icon = "🇬"
+    elif "facebook" in lower_all or "meta" in lower_all:
+        service_name = "Facebook"
+        service_icon = "👥"
+    elif "telegram" in lower_all:
+        service_name = "Telegram"
+        service_icon = "✈️"
+    elif "tiktok" in lower_all:
+        service_name = "TikTok"
+        service_icon = "🎵"
+    elif "twitter" in lower_all or " x " in lower_all:
+        service_name = "X (Twitter)"
+        service_icon = "✖️"
+    elif "binance" in lower_all or "bybit" in lower_all or "crypto" in lower_all:
+        service_name = "Binance / Crypto"
+        service_icon = "🪙"
+    elif "steam" in lower_all:
+        service_name = "Steam"
+        service_icon = "🎮"
+    elif "discord" in lower_all:
+        service_name = "Discord"
+        service_icon = "🎮"
+    elif "microsoft" in lower_all:
+        service_name = "Microsoft"
+        service_icon = "🪟"
+    elif "netflix" in lower_all:
+        service_name = "Netflix"
+        service_icon = "🎬"
+    elif "amazon" in lower_all:
+        service_name = "Amazon"
+        service_icon = "📦"
+    elif "apple" in lower_all:
+        service_name = "Apple"
+        service_icon = "🍎"
+    elif "openai" in lower_all or "chatgpt" in lower_all:
+        service_name = "OpenAI"
+        service_icon = "🤖"
+    elif "uber" in lower_all:
+        service_name = "Uber"
+        service_icon = "🚗"
+
+    header_title = f"{service_icon} <b>{service_name} ইমেইল বিবরণ:</b>" if service_name else "✉️ <b>ইমেইল বিবরণ:</b>"
+    code_label = f"{service_name} OTP" if service_name else "OTP / Code"
 
     otp_section = ""
     if otp:
@@ -1347,6 +1437,7 @@ async def background_inbox_poller(app: Application):
                                     body_raw = full_mail.get("body_text") or strip_html_tags(
                                         full_mail.get("body_html", "")
                                     )
+                                    body_html = full_mail.get("body_html", "")
                                 else:
                                     # Fallback to mail_item data so email is never lost!
                                     subject = mail_item.get("subject") or "(No Subject)"
@@ -1357,16 +1448,80 @@ async def background_inbox_poller(app: Application):
                                     )
                                     date_str = mail_item.get("received_at", "")
                                     body_raw = ""
+                                    body_html = ""
 
-                                otp = extract_otp_code(subject) or extract_otp_code(body_raw)
-                                if not otp and full_mail and full_mail.get("body_html"):
-                                    otp = extract_otp_code(strip_html_tags(full_mail.get("body_html", "")))
-                                if not otp:
-                                    otp = extract_otp_code(f"{sender} {subject} {body_raw}")
+                                # Universal multi-stage OTP detection across all services worldwide
+                                otp = (
+                                    extract_otp_code(subject)
+                                    or extract_otp_code(body_raw, html_content=body_html)
+                                    or extract_otp_code(f"{sender} {subject} {body_raw}", html_content=body_html)
+                                )
 
-                                is_ig = "instagram" in (str(sender) + str(subject) + str(body_raw)).lower()
-                                title_header = "📸 <b>ইনস্টাগ্রাম ভেরিফিকেশন কোড এসেছে!</b>" if (is_ig and otp) else ("📸 <b>ইনস্টাগ্রাম থেকে নতুন মেইল এসেছে!</b>" if is_ig else "📬 <b>নতুন ইমেইল এসেছে!</b>")
-                                code_title = "Instagram OTP" if is_ig else "OTP / Code"
+                                # Smart Service Name and Icon Detection for clean branding
+                                lower_all = (str(sender) + " " + str(subject) + " " + str(body_raw)).lower()
+                                service_name = ""
+                                service_icon = "🔑"
+                                if "instagram" in lower_all:
+                                    service_name = "Instagram"
+                                    service_icon = "📸"
+                                elif "whatsapp" in lower_all:
+                                    service_name = "WhatsApp"
+                                    service_icon = "💬"
+                                elif "google" in lower_all:
+                                    service_name = "Google"
+                                    service_icon = "🇬"
+                                elif "facebook" in lower_all or "meta" in lower_all:
+                                    service_name = "Facebook"
+                                    service_icon = "👥"
+                                elif "telegram" in lower_all:
+                                    service_name = "Telegram"
+                                    service_icon = "✈️"
+                                elif "tiktok" in lower_all:
+                                    service_name = "TikTok"
+                                    service_icon = "🎵"
+                                elif "twitter" in lower_all or " x " in lower_all:
+                                    service_name = "X (Twitter)"
+                                    service_icon = "✖️"
+                                elif "binance" in lower_all or "bybit" in lower_all or "crypto" in lower_all:
+                                    service_name = "Binance / Crypto"
+                                    service_icon = "🪙"
+                                elif "steam" in lower_all:
+                                    service_name = "Steam"
+                                    service_icon = "🎮"
+                                elif "discord" in lower_all:
+                                    service_name = "Discord"
+                                    service_icon = "🎮"
+                                elif "microsoft" in lower_all:
+                                    service_name = "Microsoft"
+                                    service_icon = "🪟"
+                                elif "netflix" in lower_all:
+                                    service_name = "Netflix"
+                                    service_icon = "🎬"
+                                elif "amazon" in lower_all:
+                                    service_name = "Amazon"
+                                    service_icon = "📦"
+                                elif "apple" in lower_all:
+                                    service_name = "Apple"
+                                    service_icon = "🍎"
+                                elif "openai" in lower_all or "chatgpt" in lower_all:
+                                    service_name = "OpenAI"
+                                    service_icon = "🤖"
+                                elif "uber" in lower_all:
+                                    service_name = "Uber"
+                                    service_icon = "🚗"
+
+                                if service_name and otp:
+                                    title_header = f"{service_icon} <b>{service_name} ভেরিফিকেশন কোড এসেছে!</b>"
+                                    code_title = f"{service_name} OTP"
+                                elif otp:
+                                    title_header = "🔑 <b>ভেরিফিকেশন কোড (OTP) এসেছে!</b>"
+                                    code_title = "OTP / Code"
+                                elif service_name:
+                                    title_header = f"{service_icon} <b>{service_name} থেকে নতুন মেইল এসেছে!</b>"
+                                    code_title = "Code"
+                                else:
+                                    title_header = "📬 <b>নতুন ইমেইল এসেছে!</b>"
+                                    code_title = "OTP / Code"
 
                                 otp_section = ""
                                 if otp:
@@ -1464,9 +1619,9 @@ async def background_inbox_poller(app: Application):
                                         except Exception as plain_err:
                                             logger.error(f"Error sending plain text mail to user {uid}: {plain_err}")
 
-                                # Mark as seen ONLY after successful delivery
+                                # Mark as seen with extracted OTP for persistence
                                 if sent_any:
-                                    await mark_message_seen(email, mid)
+                                    await mark_message_seen(email, mid, otp=otp)
                                     for uid in uids:
                                         await log_user_message(uid, email, mid, has_otp=(1 if otp else 0))
 
